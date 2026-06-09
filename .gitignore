@@ -22,6 +22,7 @@ runs/
 outputs/
 checkpoints/
 reports/figures/
+notebooks/reports/
 
 # Local extracted notes from proposal PDFs.
 notes/proposal_text.md

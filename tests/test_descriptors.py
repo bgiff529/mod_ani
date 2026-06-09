@@ -4,6 +4,7 @@ from mod_ani.config import quick_test_config
 from mod_ani.descriptors import HydrogenLikeRadial, make_hydrogen_like_aev
 from mod_ani.local_torchani import torchani_source_path, use_local_torchani
 from mod_ani.models import build_model
+from mod_ani.training import filter_energy_outliers, move_batch
 
 
 def test_hydrogen_like_radial_shape_and_grad():
@@ -44,3 +45,32 @@ def test_electron_radial_model_uses_hydrogen_like_radial():
     model = build_model(quick_test_config(model_kind="electron_radial"))
 
     assert isinstance(model.aev_computer.radial, HydrogenLikeRadial)
+
+
+def test_move_batch_casts_float64_before_device_transfer():
+    batch = {
+        "species": torch.tensor([[0, 1]], dtype=torch.long),
+        "coordinates": torch.zeros((1, 2, 3), dtype=torch.float64),
+        "energies": torch.zeros(1, dtype=torch.float64),
+    }
+
+    moved = move_batch(batch, torch.device("cpu"), torch.float32)
+
+    assert moved["species"].dtype == torch.long
+    assert moved["coordinates"].dtype == torch.float32
+    assert moved["energies"].dtype == torch.float32
+
+
+def test_filter_energy_outliers_drops_placeholder_scale_targets():
+    batch = {
+        "species": torch.tensor([[0, 1], [0, 1], [0, 1]], dtype=torch.long),
+        "coordinates": torch.zeros((3, 2, 3), dtype=torch.float32),
+        "energies": torch.tensor([-40.0, 2.0e10, -41.0], dtype=torch.float32),
+    }
+
+    filtered = filter_energy_outliers(batch, max_abs_energy_hartree=1.0e5)
+
+    assert filtered is not None
+    assert filtered["species"].shape[0] == 2
+    assert filtered["coordinates"].shape[0] == 2
+    assert filtered["energies"].tolist() == [-40.0, -41.0]

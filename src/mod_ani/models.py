@@ -23,7 +23,7 @@ def build_baseline_model(config: ExperimentConfig) -> ANI:
     return simple_ani(
         config.symbols,
         lot=config.lot,
-        repulsion=True,
+        repulsion=config.repulsion,
         strategy="pyaev",
         periodic_table_index=True,
     )
@@ -50,7 +50,8 @@ def build_electron_radial_model(config: ExperimentConfig) -> ANI:
         assembler.set_gsaes_as_self_energies(lot=config.lot)
     except KeyError:
         assembler.set_zeros_as_self_energies()
-    assembler.add_potential(torchani.potentials.RepulsionXTB, name="repulsion")
+    if config.repulsion:
+        assembler.add_potential(torchani.potentials.RepulsionXTB, name="repulsion")
     return assembler.assemble()
 
 

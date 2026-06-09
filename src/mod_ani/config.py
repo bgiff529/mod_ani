@@ -23,11 +23,14 @@ class ExperimentConfig:
     max_epochs: int = 3
     learning_rate: float = 5.0e-4
     weight_decay: float = 1.0e-6
+    max_grad_norm: float = 10.0
     validation_fraction: float = 0.2
     divs_seed: int = 20260597
     batch_seed: int = 20260598
     force_training: bool = False
     force_coefficient: float = 0.1
+    repulsion: bool = False
+    max_abs_energy_hartree: float = 1.0e5
     cache_batches: bool = True
     num_workers: int = 0
     device: str = "auto"
@@ -48,9 +51,16 @@ class ExperimentConfig:
 
             if torch.cuda.is_available():
                 return "cuda"
+            if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                return "mps"
         except Exception:
             pass
         return "cpu"
+
+    def effective_learning_rate(self) -> float:
+        if self.resolved_device() == "mps":
+            return min(self.learning_rate, 1.0e-4)
+        return self.learning_rate
 
     def as_dict(self) -> dict[str, object]:
         data = asdict(self)

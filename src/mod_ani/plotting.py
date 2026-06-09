@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 
-def plot_history(histories: dict[str, list[dict[str, float]]], output: Path | None = None):
+def plot_history(histories: dict[str, list[dict[str, Any]]], output: Path | None = None):
     """Plot validation RMSE curves for one or more model histories."""
 
     import matplotlib.pyplot as plt
