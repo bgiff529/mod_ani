@@ -160,7 +160,7 @@ def train(
         model.train(True)
         epoch_loss = 0.0
         batches = 0
-        for batch in training:
+        for batch_idx, batch in enumerate(training):
             batch = move_batch(batch, device, dtype)
             batch = filter_energy_outliers(batch, config.max_abs_energy_hartree)
             if batch is None:
@@ -169,7 +169,19 @@ def train(
             coordinates = batch["coordinates"].requires_grad_(config.force_training)
             target_energies = batch["energies"]
             num_atoms = (species >= 0).sum(dim=1, dtype=target_energies.dtype)
-            predicted_energies = model((species, coordinates)).energies
+            try:
+                predicted_energies = model((species, coordinates)).energies
+            except RuntimeError as exc:
+                shape_context = {
+                    key: tuple(value.shape)
+                    for key, value in batch.items()
+                    if isinstance(value, torch.Tensor)
+                }
+                raise RuntimeError(
+                    "Model forward failed "
+                    f"(device={device.type}, model_kind={config.model_kind}, "
+                    f"epoch={epoch}, batch_idx={batch_idx}, shapes={shape_context})"
+                ) from exc
             energy_loss = (mse(predicted_energies, target_energies) / num_atoms.sqrt()).mean()
             if config.force_training and "forces" in batch:
                 target_forces = batch["forces"]
