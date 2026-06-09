@@ -6,6 +6,11 @@ from collections.abc import Sequence
 
 import torch
 from torch import Tensor
+
+from mod_ani.local_torchani import use_local_torchani
+
+use_local_torchani()
+
 from torchani.aev import AEVComputer, ANIAngular, Radial
 from torchani.cutoffs import CutoffArg
 

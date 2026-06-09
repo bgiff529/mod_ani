@@ -6,4 +6,5 @@ dependencies:
   - pypdf
   - pip
   - pip:
+      - -e vendor/torchani
       - -e .[dev]

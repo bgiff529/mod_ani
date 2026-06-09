@@ -1,0 +1,3 @@
+[submodule "vendor/torchani"]
+	path = vendor/torchani
+	url = https://github.com/aiqm/torchani.git
