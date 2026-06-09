@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 .Python
+*.egg-info/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -11,6 +12,12 @@ env/
 
 # Conda environments should be recreated from environment.yml.
 .conda/
+
+# Local reference checkouts.
+vendor/
+
+# Local extracted notes from proposal PDFs.
+notes/proposal_text.md
 
 # Local secrets and machine-specific config.
 .env
