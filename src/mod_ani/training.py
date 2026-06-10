@@ -6,6 +6,7 @@ import csv
 import json
 import math
 import time
+from dataclasses import fields
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,20 @@ from torchani.units import hartree2kcalpermol
 
 from mod_ani.config import ExperimentConfig
 from mod_ani.models import build_model, count_parameters
+
+
+def _verbose(config: ExperimentConfig) -> bool:
+    return bool(getattr(config, "verbose", True))
+
+
+def _clone_config(config: ExperimentConfig, **overrides: Any) -> ExperimentConfig:
+    values = {
+        field.name: getattr(config, field.name)
+        for field in fields(ExperimentConfig)
+        if hasattr(config, field.name)
+    }
+    values.update(overrides)
+    return ExperimentConfig(**values)
 
 
 def make_run_dir(config: ExperimentConfig) -> Path:
@@ -137,7 +152,8 @@ def train(
     if run_dir is None:
         run_dir = make_run_dir(config)
     run_dir.mkdir(parents=True, exist_ok=True)
-    if config.verbose:
+    verbose = _verbose(config)
+    if verbose:
         print("=" * 88)
         print(f"[train] Starting {config.model_kind} on {config.dataset} ({config.lot})")
         print(f"[train] Run directory: {run_dir}")
@@ -150,7 +166,7 @@ def train(
     dtype = _torch_dtype(config)
     if device.type == "mps" and dtype == torch.float64:
         dtype = torch.float32
-    if config.verbose:
+    if verbose:
         print(
             "[train] Device/dtype/lr: "
             f"{device.type}/{str(dtype).replace('torch.', '')}/"
@@ -163,7 +179,7 @@ def train(
         )
         print("[train] Building model...")
     model = build_model(config).to(device=device, dtype=dtype)
-    if config.verbose:
+    if verbose:
         print(f"[train] Trainable parameters: {count_parameters(model):,}")
     optimizer = torch.optim.AdamW(
         model.neural_networks.parameters(),
@@ -187,7 +203,7 @@ def train(
         pin_memory=False,
         shuffle=False,
     )
-    if config.verbose:
+    if verbose:
         print(f"[train] Training batches per epoch: {len(training)}")
         print(f"[train] Validation batches per epoch: {len(validation)}")
 
@@ -195,7 +211,7 @@ def train(
     best_rmse = math.inf
     for epoch in range(1, config.max_epochs + 1):
         epoch_start = time.perf_counter()
-        if config.verbose:
+        if verbose:
             print("-" * 88)
             print(f"[train] Epoch {epoch}/{config.max_epochs} started")
         model.train(True)
@@ -207,7 +223,7 @@ def train(
             total=len(training),
             desc=f"{config.model_kind} epoch {epoch}/{config.max_epochs}",
             unit="batch",
-            disable=not config.verbose,
+            disable=not verbose,
             leave=True,
         )
         for batch_idx, batch in enumerate(train_iterator):
@@ -253,7 +269,7 @@ def train(
             optimizer.step()
             epoch_loss += loss.detach().item()
             batches += 1
-            if config.verbose:
+            if verbose:
                 train_iterator.set_postfix(
                     loss=f"{loss.detach().item():.4g}",
                     used=batches,
@@ -261,7 +277,7 @@ def train(
                     lr=f"{optimizer.param_groups[0]['lr']:.2e}",
                 )
 
-        if config.verbose:
+        if verbose:
             print(f"[train] Epoch {epoch}: validating...")
         metrics = evaluate(
             model,
@@ -270,7 +286,7 @@ def train(
             dtype,
             config.max_abs_energy_hartree,
             desc=f"{config.model_kind} validation {epoch}/{config.max_epochs}",
-            verbose=config.verbose,
+            verbose=verbose,
         )
         epoch_seconds = time.perf_counter() - epoch_start
         metrics.update(
@@ -288,7 +304,7 @@ def train(
         )
         history.append(metrics)
         scheduler.step(metrics["rmse_kcal_mol"])
-        if config.verbose:
+        if verbose:
             print(
                 "[train] Epoch "
                 f"{epoch}/{config.max_epochs} done in {epoch_seconds:.1f}s | "
@@ -308,22 +324,22 @@ def train(
             },
             run_dir / "latest_training_state.pt",
         )
-        if config.verbose:
+        if verbose:
             print(f"[train] Saved latest checkpoint: {run_dir / 'latest_training_state.pt'}")
         if metrics["rmse_kcal_mol"] < best_rmse:
             best_rmse = metrics["rmse_kcal_mol"]
             torch.save(model.state_dict(), run_dir / "best_model_state.pt")
-            if config.verbose:
+            if verbose:
                 print(
                     "[train] New best model: "
                     f"{best_rmse:.6g} kcal/mol -> {run_dir / 'best_model_state.pt'}"
                 )
         write_history(history, run_dir / "metrics.csv")
         (run_dir / "metrics.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
-        if config.verbose:
+        if verbose:
             print(f"[train] Wrote metrics: {run_dir / 'metrics.csv'}")
 
-    if config.verbose:
+    if verbose:
         print(f"[train] Finished {config.model_kind}. Best RMSE: {best_rmse:.6g} kcal/mol")
     return model, history
 
@@ -349,14 +365,14 @@ def train_pair(
     run_root.mkdir(parents=True, exist_ok=True)
     results: dict[str, list[dict[str, Any]]] = {}
     for model_kind in ("baseline", "electron_radial"):
-        config = ExperimentConfig(**base_config.as_dict())
-        config.model_kind = model_kind
+        config = _clone_config(base_config, model_kind=model_kind)
         model_dir = run_root / model_kind
-        if config.verbose:
+        verbose = _verbose(config)
+        if verbose:
             print("#" * 88)
             print(f"[train_pair] Training model: {model_kind}")
         _, history = train(config, batched, run_dir=model_dir)
         results[model_kind] = history
-        if config.verbose:
+        if verbose:
             print(f"[train_pair] Completed model: {model_kind}")
     return results
