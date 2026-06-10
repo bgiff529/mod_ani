@@ -40,6 +40,7 @@ class ExperimentConfig:
     refresh_batches: bool = False
     limit_train_batches: int | float = 1.0
     limit_valid_batches: int | float = 1.0
+    verbose: bool = True
     notes: str = ""
     extra: dict[str, str | int | float | bool] = field(default_factory=dict)
 

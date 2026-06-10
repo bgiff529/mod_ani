@@ -18,10 +18,20 @@ from mod_ani.config import ExperimentConfig
 def download_dataset(config: ExperimentConfig) -> ANIDataset:
     """Download/open a TorchANI built-in dataset."""
 
+    if config.verbose:
+        print(f"[data] Opening TorchANI dataset {config.dataset} ({config.lot})")
     dataset_factory = getattr(torchani.datasets, config.dataset)
     dataset = dataset_factory(lot=config.lot, download=True)
     if "energies" not in dataset.properties:
         raise ValueError(f"{config.dataset} does not expose an 'energies' property")
+    if config.verbose:
+        meta = describe_dataset(dataset)
+        print(
+            "[data] Ready: "
+            f"{meta['num_conformers']} conformers in "
+            f"{meta['num_conformer_groups']} groups; "
+            f"properties={meta['properties']}"
+        )
     return dataset
 
 
@@ -45,6 +55,8 @@ def prepare_batched_dataset(
 
     batched_dir = Path(config.data_dir) / "batched" / config.dataset / config.lot
     if config.refresh_batches and batched_dir.exists():
+        if config.verbose:
+            print(f"[data] Removing existing batches: {batched_dir}")
         shutil.rmtree(batched_dir)
 
     splits = {
@@ -56,7 +68,13 @@ def prepare_batched_dataset(
         for prop in ("species", "coordinates", "energies", "forces")
         if prop in dataset.properties
     )
+    if config.verbose:
+        print(f"[data] Batch directory: {batched_dir}")
+        print(f"[data] Batch properties: {properties}")
+        print(f"[data] Splits: {splits}; batch_size={config.batch_size}")
     if not batched_dir.exists():
+        if config.verbose:
+            print("[data] Creating batches. This can take a while for ANI1x...")
         torchani.datasets.create_batched_dataset(
             dataset,
             dest_path=batched_dir,
@@ -65,7 +83,10 @@ def prepare_batched_dataset(
             properties=properties,
             divs_seed=config.divs_seed,
             batch_seed=config.batch_seed,
+            verbose=config.verbose,
         )
+    elif config.verbose:
+        print("[data] Reusing existing batches")
 
     train_ds: BatchedDataset = ANIBatchedDataset(
         batched_dir,
@@ -81,7 +102,12 @@ def prepare_batched_dataset(
     )
 
     if config.cache_batches:
+        if config.verbose:
+            print("[data] Caching batches in RAM")
         train_ds = train_ds.cache(pin_memory=False)
         valid_ds = valid_ds.cache(pin_memory=False)
 
+    if config.verbose:
+        print(f"[data] Training batches: {len(train_ds)}")
+        print(f"[data] Validation batches: {len(valid_ds)}")
     return {"training": train_ds, "validation": valid_ds}

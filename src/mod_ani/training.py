@@ -15,6 +15,7 @@ from mod_ani.local_torchani import use_local_torchani
 
 use_local_torchani()
 
+from tqdm.auto import tqdm
 from torchani.grad import forces_for_training
 from torchani.units import hartree2kcalpermol
 
@@ -78,6 +79,8 @@ def evaluate(
     device: torch.device,
     dtype: torch.dtype = torch.float32,
     max_abs_energy_hartree: float = 1.0e5,
+    desc: str = "Validation",
+    verbose: bool = True,
 ) -> dict[str, float]:
     """Evaluate energy prediction errors."""
 
@@ -85,11 +88,21 @@ def evaluate(
     squared_error = 0.0
     absolute_error = 0.0
     count = 0
+    skipped = 0
     with torch.no_grad():
-        for batch in dataloader:
+        iterator = tqdm(
+            dataloader,
+            total=len(dataloader),
+            desc=desc,
+            unit="batch",
+            disable=not verbose,
+            leave=False,
+        )
+        for batch in iterator:
             batch = move_batch(batch, device, dtype)
             batch = filter_energy_outliers(batch, max_abs_energy_hartree)
             if batch is None:
+                skipped += 1
                 continue
             species = batch["species"]
             coordinates = batch["coordinates"]
@@ -99,6 +112,8 @@ def evaluate(
             squared_error += errors.pow(2).sum().item()
             absolute_error += errors.abs().sum().item()
             count += predicted_energies.shape[0]
+            if verbose:
+                iterator.set_postfix(conformers=count, skipped=skipped)
     model.train(True)
     rmse = math.sqrt(squared_error / max(count, 1))
     mae = absolute_error / max(count, 1)
@@ -108,6 +123,7 @@ def evaluate(
         "rmse_kcal_mol": hartree2kcalpermol(rmse),
         "mae_kcal_mol": hartree2kcalpermol(mae),
         "num_conformers": float(count),
+        "skipped_validation_batches": float(skipped),
     }
 
 
@@ -121,6 +137,10 @@ def train(
     if run_dir is None:
         run_dir = make_run_dir(config)
     run_dir.mkdir(parents=True, exist_ok=True)
+    if config.verbose:
+        print("=" * 88)
+        print(f"[train] Starting {config.model_kind} on {config.dataset} ({config.lot})")
+        print(f"[train] Run directory: {run_dir}")
     (run_dir / "config.json").write_text(
         json.dumps(config.as_dict(), indent=2),
         encoding="utf-8",
@@ -130,7 +150,21 @@ def train(
     dtype = _torch_dtype(config)
     if device.type == "mps" and dtype == torch.float64:
         dtype = torch.float32
+    if config.verbose:
+        print(
+            "[train] Device/dtype/lr: "
+            f"{device.type}/{str(dtype).replace('torch.', '')}/"
+            f"{config.effective_learning_rate():.3e}"
+        )
+        print(
+            "[train] Options: "
+            f"epochs={config.max_epochs}, force_training={config.force_training}, "
+            f"repulsion={config.repulsion}, max_grad_norm={config.max_grad_norm}"
+        )
+        print("[train] Building model...")
     model = build_model(config).to(device=device, dtype=dtype)
+    if config.verbose:
+        print(f"[train] Trainable parameters: {count_parameters(model):,}")
     optimizer = torch.optim.AdamW(
         model.neural_networks.parameters(),
         lr=config.effective_learning_rate(),
@@ -153,17 +187,34 @@ def train(
         pin_memory=False,
         shuffle=False,
     )
+    if config.verbose:
+        print(f"[train] Training batches per epoch: {len(training)}")
+        print(f"[train] Validation batches per epoch: {len(validation)}")
 
     history: list[dict[str, Any]] = []
     best_rmse = math.inf
     for epoch in range(1, config.max_epochs + 1):
+        epoch_start = time.perf_counter()
+        if config.verbose:
+            print("-" * 88)
+            print(f"[train] Epoch {epoch}/{config.max_epochs} started")
         model.train(True)
         epoch_loss = 0.0
         batches = 0
-        for batch_idx, batch in enumerate(training):
+        skipped_train_batches = 0
+        train_iterator = tqdm(
+            training,
+            total=len(training),
+            desc=f"{config.model_kind} epoch {epoch}/{config.max_epochs}",
+            unit="batch",
+            disable=not config.verbose,
+            leave=True,
+        )
+        for batch_idx, batch in enumerate(train_iterator):
             batch = move_batch(batch, device, dtype)
             batch = filter_energy_outliers(batch, config.max_abs_energy_hartree)
             if batch is None:
+                skipped_train_batches += 1
                 continue
             species = batch["species"]
             coordinates = batch["coordinates"].requires_grad_(config.force_training)
@@ -202,14 +253,26 @@ def train(
             optimizer.step()
             epoch_loss += loss.detach().item()
             batches += 1
+            if config.verbose:
+                train_iterator.set_postfix(
+                    loss=f"{loss.detach().item():.4g}",
+                    used=batches,
+                    skipped=skipped_train_batches,
+                    lr=f"{optimizer.param_groups[0]['lr']:.2e}",
+                )
 
+        if config.verbose:
+            print(f"[train] Epoch {epoch}: validating...")
         metrics = evaluate(
             model,
             validation,
             device,
             dtype,
             config.max_abs_energy_hartree,
+            desc=f"{config.model_kind} validation {epoch}/{config.max_epochs}",
+            verbose=config.verbose,
         )
+        epoch_seconds = time.perf_counter() - epoch_start
         metrics.update(
             {
                 "epoch": float(epoch),
@@ -218,10 +281,22 @@ def train(
                 "parameter_count": float(count_parameters(model)),
                 "device": device.type,
                 "dtype": str(dtype).replace("torch.", ""),
+                "epoch_seconds": epoch_seconds,
+                "training_batches": float(batches),
+                "skipped_training_batches": float(skipped_train_batches),
             }
         )
         history.append(metrics)
         scheduler.step(metrics["rmse_kcal_mol"])
+        if config.verbose:
+            print(
+                "[train] Epoch "
+                f"{epoch}/{config.max_epochs} done in {epoch_seconds:.1f}s | "
+                f"train_loss={metrics['train_loss']:.6g} | "
+                f"val_rmse={metrics['rmse_kcal_mol']:.6g} kcal/mol | "
+                f"val_mae={metrics['mae_kcal_mol']:.6g} kcal/mol | "
+                f"val_conformers={int(metrics['num_conformers'])}"
+            )
 
         torch.save(
             {
@@ -233,12 +308,23 @@ def train(
             },
             run_dir / "latest_training_state.pt",
         )
+        if config.verbose:
+            print(f"[train] Saved latest checkpoint: {run_dir / 'latest_training_state.pt'}")
         if metrics["rmse_kcal_mol"] < best_rmse:
             best_rmse = metrics["rmse_kcal_mol"]
             torch.save(model.state_dict(), run_dir / "best_model_state.pt")
+            if config.verbose:
+                print(
+                    "[train] New best model: "
+                    f"{best_rmse:.6g} kcal/mol -> {run_dir / 'best_model_state.pt'}"
+                )
         write_history(history, run_dir / "metrics.csv")
         (run_dir / "metrics.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
+        if config.verbose:
+            print(f"[train] Wrote metrics: {run_dir / 'metrics.csv'}")
 
+    if config.verbose:
+        print(f"[train] Finished {config.model_kind}. Best RMSE: {best_rmse:.6g} kcal/mol")
     return model, history
 
 
@@ -266,6 +352,11 @@ def train_pair(
         config = ExperimentConfig(**base_config.as_dict())
         config.model_kind = model_kind
         model_dir = run_root / model_kind
+        if config.verbose:
+            print("#" * 88)
+            print(f"[train_pair] Training model: {model_kind}")
         _, history = train(config, batched, run_dir=model_dir)
         results[model_kind] = history
+        if config.verbose:
+            print(f"[train_pair] Completed model: {model_kind}")
     return results
