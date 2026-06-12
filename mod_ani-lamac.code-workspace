@@ -1,0 +1,11 @@
+{
+  "folders": [
+    {
+      "uri": "vscode-remote://ssh-remote+lamac/Users/bgifford/mod_ani"
+    }
+  ],
+  "remoteAuthority": "ssh-remote+lamac",
+  "settings": {
+    "python.defaultInterpreterPath": "/Users/bgifford/miniconda3/envs/mod_ani/bin/python"
+  }
+}

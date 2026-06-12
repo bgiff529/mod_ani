@@ -1,0 +1,11 @@
+{
+  "python.defaultInterpreterPath": "/Users/bgifford/miniconda3/envs/mod_ani/bin/python",
+  "python.terminal.activateEnvironment": true,
+  "jupyter.jupyterServerType": "local",
+  "jupyter.kernels.filter": [
+    {
+      "path": "/Users/bgifford/miniconda3/envs/mod_ani/bin/python",
+      "type": "pythonEnvironment"
+    }
+  ]
+}
