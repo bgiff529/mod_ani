@@ -51,7 +51,9 @@ class ElectronChannelNetworks(torch.nn.Module):
             layers.append(torch.nn.Linear(previous, hidden_dim, bias=False))
             layers.append(torch.nn.GELU())
             previous = hidden_dim
-        layers.append(torch.nn.Linear(previous, 1, bias=False))
+        output = torch.nn.Linear(previous, 1, bias=False)
+        torch.nn.init.zeros_(output.weight)
+        layers.append(output)
         return torch.nn.Sequential(*layers)
 
     def forward(self, elem_idxs: torch.Tensor, aevs: torch.Tensor) -> torch.Tensor:
