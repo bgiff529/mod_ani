@@ -74,9 +74,9 @@ class HydrogenLikeRadial(Radial):
         """Initial H/C/N/O-friendly feature set for low-Z energy experiments."""
 
         return cls(
-            principal=[1.0, 2.0, 2.0, 3.0, 3.0],
-            angular_momentum=[0.0, 0.0, 1.0, 0.0, 1.0],
-            z_eff=[1.0, 1.8, 1.8, 2.6, 2.6],
+            principal=[1.0, 2.0, 2.0, 3.0, 3.0, 3.0],
+            angular_momentum=[0.0, 0.0, 1.0, 0.0, 1.0, 2.0],
+            z_eff=[1.0, 1.8, 1.8, 2.6, 2.6, 2.6],
             cutoff=cutoff,
             cutoff_fn=cutoff_fn,
         )

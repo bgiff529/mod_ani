@@ -20,6 +20,16 @@ def test_hydrogen_like_radial_shape_and_grad():
     assert torch.isfinite(distances.grad).all()
 
 
+def test_hydrogen_like_radial_includes_3d_feature():
+    radial = HydrogenLikeRadial.low_quantum_numbers()
+
+    assert radial.num_feats == 6
+    assert (
+        float(radial.principal.flatten()[-1]),
+        float(radial.angular_momentum.flatten()[-1]),
+    ) == (3.0, 2.0)
+
+
 def test_hydrogen_like_aev_shape():
     aev = make_hydrogen_like_aev(num_species=4)
     species = torch.tensor([[0, 1, 1]])
