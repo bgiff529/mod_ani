@@ -353,6 +353,32 @@ def write_history(history: list[dict[str, Any]], path: Path) -> None:
         writer.writerows(history)
 
 
+def train_models(
+    base_config: ExperimentConfig,
+    batched: dict[str, Any],
+    model_kinds: tuple[str, ...] = ("baseline", "electron_radial", "electron_channels"),
+    run_root: Path | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Train several model kinds on the same batches."""
+
+    if run_root is None:
+        run_root = make_run_dir(base_config)
+    run_root.mkdir(parents=True, exist_ok=True)
+    results: dict[str, list[dict[str, Any]]] = {}
+    for model_kind in model_kinds:
+        config = _clone_config(base_config, model_kind=model_kind)
+        model_dir = run_root / model_kind
+        verbose = _verbose(config)
+        if verbose:
+            print("#" * 88)
+            print(f"[train_models] Training model: {model_kind}")
+        _, history = train(config, batched, run_dir=model_dir)
+        results[model_kind] = history
+        if verbose:
+            print(f"[train_models] Completed model: {model_kind}")
+    return results
+
+
 def train_pair(
     base_config: ExperimentConfig,
     batched: dict[str, Any],
@@ -360,19 +386,9 @@ def train_pair(
 ) -> dict[str, list[dict[str, Any]]]:
     """Train baseline and electron-radial models on the same batches."""
 
-    if run_root is None:
-        run_root = make_run_dir(base_config)
-    run_root.mkdir(parents=True, exist_ok=True)
-    results: dict[str, list[dict[str, Any]]] = {}
-    for model_kind in ("baseline", "electron_radial"):
-        config = _clone_config(base_config, model_kind=model_kind)
-        model_dir = run_root / model_kind
-        verbose = _verbose(config)
-        if verbose:
-            print("#" * 88)
-            print(f"[train_pair] Training model: {model_kind}")
-        _, history = train(config, batched, run_dir=model_dir)
-        results[model_kind] = history
-        if verbose:
-            print(f"[train_pair] Completed model: {model_kind}")
-    return results
+    return train_models(
+        base_config,
+        batched,
+        model_kinds=("baseline", "electron_radial"),
+        run_root=run_root,
+    )
