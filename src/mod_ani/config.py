@@ -8,7 +8,7 @@ from typing import Literal
 
 
 DatasetName = Literal["TestData", "ANI1x", "ANI1ccx"]
-ModelKind = Literal["baseline", "electron_radial"]
+ModelKind = Literal["baseline", "electron_radial", "electron_channels"]
 
 
 @dataclass(slots=True)

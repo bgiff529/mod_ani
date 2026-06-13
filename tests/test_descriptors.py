@@ -3,7 +3,7 @@ import torch
 from mod_ani.config import quick_test_config
 from mod_ani.descriptors import HydrogenLikeRadial, make_hydrogen_like_aev
 from mod_ani.local_torchani import torchani_source_path, use_local_torchani
-from mod_ani.models import build_model
+from mod_ani.models import ElectronChannelANI, build_model
 from mod_ani.training import filter_energy_outliers, move_batch
 
 
@@ -55,6 +55,33 @@ def test_electron_radial_model_uses_hydrogen_like_radial():
     model = build_model(quick_test_config(model_kind="electron_radial"))
 
     assert isinstance(model.aev_computer.radial, HydrogenLikeRadial)
+
+
+def test_electron_channel_model_uses_orbital_channels():
+    model = build_model(quick_test_config(model_kind="electron_channels"))
+
+    assert isinstance(model, ElectronChannelANI)
+    assert isinstance(model.aev_computer.radial, HydrogenLikeRadial)
+    assert len(model.neural_networks.channels) == model.aev_computer.radial.num_feats == 6
+
+
+def test_electron_channel_model_forward_shape():
+    model = build_model(quick_test_config(model_kind="electron_channels"))
+    species = torch.tensor([[1, 6, 8, -1]], dtype=torch.long)
+    coordinates = torch.tensor(
+        [[
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.1],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+        ]],
+        dtype=torch.float32,
+    )
+
+    result = model((species, coordinates))
+
+    assert result.energies.shape == (1,)
+    assert torch.isfinite(result.energies).all()
 
 
 def test_move_batch_casts_float64_before_device_transfer():
